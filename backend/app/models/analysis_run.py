@@ -83,6 +83,7 @@ class AnalysisRun(BaseModel):
     id: Optional[str] = Field(default=None, alias="_id")
     repo_id: str
     status: RunStatus = "pending"
+    stage: Optional[str] = None
     error: Optional[str] = None
     py_file_count: int = 0
     total_file_count: int = 0

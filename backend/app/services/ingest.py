@@ -41,7 +41,7 @@ async def ingest_repo(run_id: str) -> None:
 
     await runs.update_one(
         {"_id": ObjectId(run_id)},
-        {"$set": {"status": "running", "started_at": datetime.now(timezone.utc)}},
+        {"$set": {"status": "running", "stage": "cloning", "started_at": datetime.now(timezone.utc)}},
     )
 
     url = repo["url"]
@@ -50,9 +50,15 @@ async def ingest_repo(run_id: str) -> None:
     try:
         _clone(url, tmp)
         total_file_count = _enforce_size_limit(tmp)
+
+        await runs.update_one({"_id": ObjectId(run_id)}, {"$set": {"stage": "metrics"}})
         files = _collect_py_files(tmp)
         aggregates = _compute_aggregates(files)
+
+        await runs.update_one({"_id": ObjectId(run_id)}, {"$set": {"stage": "dependency_graph"}})
         dependency_aggregates = _compute_dependency_graph(tmp, files)
+
+        await runs.update_one({"_id": ObjectId(run_id)}, {"$set": {"stage": "smells"}})
         smell_aggregates = _compute_smells(files, dependency_aggregates)
 
         await runs.update_one(
@@ -60,6 +66,7 @@ async def ingest_repo(run_id: str) -> None:
             {
                 "$set": {
                     "status": "done",
+                    "stage": "done",
                     "py_file_count": len(files),
                     "total_file_count": total_file_count,
                     "files": files,

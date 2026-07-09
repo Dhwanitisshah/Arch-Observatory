@@ -4,3 +4,19 @@ export async function getHealth() {
   const res = await fetch(`${BASE_URL}/health`);
   return res.json();
 }
+
+export async function startAnalysis(url) {
+  const res = await fetch(`${BASE_URL}/analyze`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url }),
+  });
+  if (!res.ok) throw new Error((await res.json()).detail || "Failed to start analysis");
+  return res.json();
+}
+
+export async function getRun(runId) {
+  const res = await fetch(`${BASE_URL}/runs/${runId}`);
+  if (!res.ok) throw new Error("Failed to fetch run");
+  return res.json();
+}

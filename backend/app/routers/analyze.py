@@ -44,6 +44,7 @@ async def analyze(body: AnalyzeRequest, background_tasks: BackgroundTasks):
     run_doc = {
         "repo_id": str(repo["_id"]),
         "status": "pending",
+        "stage": None,
         "error": None,
         "py_file_count": 0,
         "total_file_count": 0,
