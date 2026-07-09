@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     MAX_PY_FILE_COUNT: int = 3000
     CLONE_TIMEOUT_SECONDS: int = 120
     ALLOWED_GIT_HOSTS: list[str] = ["github.com"]
+    CC_THRESHOLD: int = 10
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

@@ -8,6 +8,7 @@ from bson import ObjectId
 
 from app.config import settings
 from app.db import db
+from app.services import metrics
 
 
 class IngestError(Exception):
@@ -48,6 +49,7 @@ async def ingest_repo(run_id: str) -> None:
         _clone(url, tmp)
         total_file_count = _enforce_size_limit(tmp)
         files = _collect_py_files(tmp)
+        aggregates = _compute_aggregates(files)
 
         await runs.update_one(
             {"_id": ObjectId(run_id)},
@@ -58,6 +60,7 @@ async def ingest_repo(run_id: str) -> None:
                     "total_file_count": total_file_count,
                     "files": files,
                     "finished_at": datetime.now(timezone.utc),
+                    **aggregates,
                 }
             },
         )
@@ -143,9 +146,43 @@ def _collect_py_files(root: str) -> list[dict]:
                 raise IngestError(f"Repo exceeds max Python file count of {settings.MAX_PY_FILE_COUNT}")
 
             with open(path, "r", encoding="utf-8", errors="replace") as f:
-                loc = sum(1 for _ in f)
+                source = f.read()
+            loc = len(source.splitlines())
 
             rel_path = os.path.relpath(path, root).replace(os.sep, "/")
-            files.append({"path": rel_path, "loc": loc})
+            entry = {"path": rel_path, "loc": loc}
+            entry.update(metrics.analyze_file(source))
+            files.append(entry)
 
     return files
+
+
+def _compute_aggregates(files: list[dict]) -> dict:
+    parse_ok_files = [f for f in files if f.get("parse_ok")]
+    unparseable_files = [f["path"] for f in files if not f.get("parse_ok")]
+
+    total_functions = sum(len(f.get("functions", [])) for f in parse_ok_files)
+
+    mi_values = [f["mi"] for f in parse_ok_files if "mi" in f]
+    avg_mi = round(sum(mi_values) / len(mi_values), 2) if mi_values else 0
+
+    high_complexity_functions = [
+        {
+            "path": f["path"],
+            "name": fn["name"],
+            "classname": fn.get("classname"),
+            "complexity": fn["complexity"],
+            "lineno": fn["lineno"],
+        }
+        for f in parse_ok_files
+        for fn in f.get("functions", [])
+        if fn["complexity"] > settings.CC_THRESHOLD
+    ]
+    high_complexity_functions.sort(key=lambda x: x["complexity"], reverse=True)
+
+    return {
+        "total_functions": total_functions,
+        "avg_mi": avg_mi,
+        "high_complexity_functions": high_complexity_functions,
+        "unparseable_files": unparseable_files,
+    }
