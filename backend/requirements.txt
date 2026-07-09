@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+motor
+pydantic-settings
+radon
+networkx
+python-multipart
+pytest
