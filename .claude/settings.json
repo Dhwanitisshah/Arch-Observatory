@@ -11,7 +11,8 @@
       "Bash(./.venv/Scripts/python.exe -c ' *)",
       "Bash(git init *)",
       "Bash(git remote *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
     ],
     "additionalDirectories": [
       "c:\\Users\\Dhwanit Shah\\OneDrive\\Desktop\\arch-observatory\\backend\\app"
