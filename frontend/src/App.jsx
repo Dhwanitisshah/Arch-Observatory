@@ -1,71 +1,99 @@
-import { useEffect, useRef, useState } from "react";
-import { getRun, startAnalysis } from "./api";
+import { useState } from "react";
+import "./App.css";
+import { startAnalysis } from "./api";
 import DependencyGraph from "./components/DependencyGraph";
+import HealthHeader from "./components/HealthHeader";
+import RunProgress from "./components/RunProgress";
+import SmellTable from "./components/SmellTable";
 
 function App() {
   const [repoUrl, setRepoUrl] = useState("");
+  const [analyzedUrl, setAnalyzedUrl] = useState("");
   const [runId, setRunId] = useState(null);
   const [run, setRun] = useState(null);
-  const [error, setError] = useState(null);
+  const [submitError, setSubmitError] = useState(null);
   const [selectedModule, setSelectedModule] = useState(null);
-  const pollRef = useRef(null);
 
-  useEffect(() => () => clearTimeout(pollRef.current), []);
+  const isActive = run && (run.status === "pending" || run.status === "running" || run.status === "failed");
+  const isDone = run && run.status === "done";
 
   async function handleAnalyze() {
-    setError(null);
+    if (!repoUrl.trim()) return;
+    setSubmitError(null);
     setRun(null);
     setSelectedModule(null);
     try {
       const { run_id } = await startAnalysis(repoUrl);
+      setAnalyzedUrl(repoUrl);
       setRunId(run_id);
-      poll(run_id);
+      setRun({ status: "pending", stage: null });
     } catch (e) {
-      setError(e.message);
+      setSubmitError(e.message);
     }
   }
 
-  function poll(id) {
-    getRun(id)
-      .then((doc) => {
-        setRun(doc);
-        if (doc.status === "pending" || doc.status === "running") {
-          pollRef.current = setTimeout(() => poll(id), 1500);
-        }
-      })
-      .catch((e) => setError(e.message));
+  function handleReset() {
+    setRunId(null);
+    setRun(null);
+    setSelectedModule(null);
+    setSubmitError(null);
   }
 
-  const isDone = run?.status === "done";
-
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100vh", fontFamily: "sans-serif" }}>
-      <div style={{ padding: 12, display: "flex", gap: 8, alignItems: "center" }}>
-        <h1 style={{ fontSize: 18, margin: 0 }}>arch-observatory</h1>
+    <div className="app">
+      <div className="topbar">
+        <h1>arch-observatory</h1>
         <input
           type="text"
           placeholder="https://github.com/owner/repo"
           value={repoUrl}
           onChange={(e) => setRepoUrl(e.target.value)}
-          style={{ flex: 1, maxWidth: 400 }}
+          onKeyDown={(e) => e.key === "Enter" && handleAnalyze()}
         />
-        <button type="button" onClick={handleAnalyze}>
+        <button type="button" className="btn" onClick={handleAnalyze} disabled={isActive}>
           Analyze
         </button>
-        {run && <span>status: {run.status}{run.stage ? ` (${run.stage})` : ""}</span>}
-        {error && <span style={{ color: "red" }}>{error}</span>}
-      </div>
-      <div style={{ flex: 1, background: "#0f172a" }}>
+        {submitError && <span className="topbar-error">{submitError}</span>}
         {isDone && (
-          <DependencyGraph
-            nodes={run.dependency_nodes}
-            edges={run.dependency_edges}
-            smells={run.smells}
-            selectedModule={selectedModule}
-            onSelectNode={setSelectedModule}
-          />
+          <button type="button" className="btn btn-ghost" onClick={handleReset}>
+            New analysis
+          </button>
         )}
       </div>
+
+      {isActive && (
+        <RunProgress
+          runId={runId}
+          status={run.status}
+          stage={run.stage}
+          error={run.error}
+          onUpdate={setRun}
+          onReset={handleReset}
+        />
+      )}
+
+      {isDone && (
+        <>
+          <HealthHeader run={run} repoUrl={analyzedUrl} />
+          <div className="report">
+            <div className="report-pane graph-pane">
+              <DependencyGraph
+                nodes={run.dependency_nodes}
+                edges={run.dependency_edges}
+                smells={run.smells}
+                selectedModule={selectedModule}
+                onSelectNode={setSelectedModule}
+              />
+            </div>
+            <SmellTable
+              smells={run.smells}
+              selectedModule={selectedModule}
+              onSelectModule={setSelectedModule}
+              runId={runId}
+            />
+          </div>
+        </>
+      )}
     </div>
   );
 }

@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import analyze
+from app.routers import analyze, fixes
 
 app = FastAPI(title="arch-observatory")
 
@@ -15,6 +15,7 @@ app.add_middleware(
 )
 
 app.include_router(analyze.router)
+app.include_router(fixes.router)
 
 
 @app.get("/health")

@@ -52,8 +52,13 @@ async def ingest_repo(run_id: str) -> None:
         total_file_count = _enforce_size_limit(tmp)
 
         await runs.update_one({"_id": ObjectId(run_id)}, {"$set": {"stage": "metrics"}})
-        files = _collect_py_files(tmp)
+        files, function_spans, file_spans = _collect_py_files(tmp)
         aggregates = _compute_aggregates(files)
+        await db["code_spans"].update_one(
+            {"run_id": run_id},
+            {"$set": {"run_id": run_id, "function_spans": function_spans, "file_spans": file_spans}},
+            upsert=True,
+        )
 
         await runs.update_one({"_id": ObjectId(run_id)}, {"$set": {"stage": "dependency_graph"}})
         dependency_aggregates = _compute_dependency_graph(tmp, files)
@@ -135,9 +140,11 @@ def _enforce_size_limit(root: str) -> int:
     return total_files
 
 
-def _collect_py_files(root: str) -> list[dict]:
+def _collect_py_files(root: str) -> tuple[list[dict], list[dict], list[dict]]:
     root_real = os.path.realpath(root)
     files = []
+    function_spans = []
+    file_spans = []
 
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d != ".git"]
@@ -167,7 +174,44 @@ def _collect_py_files(root: str) -> list[dict]:
             entry.update(metrics.analyze_file(source))
             files.append(entry)
 
-    return files
+            if entry.get("parse_ok"):
+                source_lines = source.splitlines()
+
+                for fn in entry.get("functions", []):
+                    if fn.get("complexity", 0) > settings.CC_THRESHOLD:
+                        function_spans.append(_extract_function_span(rel_path, fn, source_lines))
+
+                if loc > settings.GOD_CLASS_LOC or len(entry.get("functions", [])) > settings.GOD_CLASS_METHODS:
+                    file_spans.append(_extract_file_span(rel_path, source_lines))
+
+    return files, function_spans, file_spans
+
+
+def _extract_function_span(path: str, fn: dict, source_lines: list[str]) -> dict:
+    """Trim source down to just this function's lines, capped at FIX_MAX_SPAN_LINES.
+
+    Called during ingest while the clone still exists on disk — Phase 6 has no
+    other way to see this function's source once the clone is deleted.
+    """
+    start = max(fn["lineno"] - 1, 0)
+    end = fn.get("endline") or min(start + settings.FIX_MAX_SPAN_LINES, len(source_lines))
+    span_lines = source_lines[start:end][: settings.FIX_MAX_SPAN_LINES]
+    return {
+        "path": path,
+        "name": fn["name"],
+        "classname": fn.get("classname"),
+        "lineno": fn["lineno"],
+        "endline": fn.get("endline"),
+        "source": "\n".join(span_lines),
+    }
+
+
+def _extract_file_span(path: str, source_lines: list[str]) -> dict:
+    span_lines = source_lines[: settings.FIX_MAX_SPAN_LINES]
+    source = "\n".join(span_lines)
+    if len(source_lines) > settings.FIX_MAX_SPAN_LINES:
+        source += "\n# ... truncated ..."
+    return {"path": path, "source": source}
 
 
 def _compute_dependency_graph(root: str, files: list[dict]) -> dict:

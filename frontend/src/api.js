@@ -20,3 +20,23 @@ export async function getRun(runId) {
   if (!res.ok) throw new Error("Failed to fetch run");
   return res.json();
 }
+
+export async function requestFix(runId, smell) {
+  const res = await fetch(`${BASE_URL}/runs/${runId}/fix`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type: smell.type, target: smell.target, path: smell.path }),
+  });
+  if (!res.ok) {
+    let detail = "Failed to get a fix suggestion";
+    try {
+      detail = (await res.json()).detail || detail;
+    } catch {
+      // ignore non-JSON error bodies
+    }
+    const error = new Error(detail);
+    error.status = res.status;
+    throw error;
+  }
+  return res.json();
+}

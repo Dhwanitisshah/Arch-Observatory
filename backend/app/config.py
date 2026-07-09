@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     UNSTABLE_I: float = 0.7
     PAINFUL_CA: int = 5
 
+    # LLM fix suggestions (Phase 6)
+    GROQ_API_KEY: str = ""
+    GROQ_MODEL: str = "llama-3.3-70b-versatile"
+    FIX_MAX_SPAN_LINES: int = 120
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 
