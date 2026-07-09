@@ -13,6 +13,15 @@ class Settings(BaseSettings):
     ALLOWED_GIT_HOSTS: list[str] = ["github.com"]
     CC_THRESHOLD: int = 10
 
+    # Smell detection thresholds (Phase 4)
+    GOD_CLASS_LOC: int = 500
+    GOD_CLASS_METHODS: int = 20
+    GOD_CLASS_CE: int = 8
+    HOTSPOT_CC: int = 10
+    HOTSPOT_MI: float = 50
+    UNSTABLE_I: float = 0.7
+    PAINFUL_CA: int = 5
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 

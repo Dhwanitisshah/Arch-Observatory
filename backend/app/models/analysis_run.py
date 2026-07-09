@@ -40,6 +40,45 @@ class HighComplexityFunction(BaseModel):
     lineno: int
 
 
+class DependencyNode(BaseModel):
+    module: str
+    path: str
+    ca: int
+    ce: int
+    instability: float
+
+
+class DependencyEdge(BaseModel):
+    source: str
+    target: str
+
+
+class DependencyCycle(BaseModel):
+    members: list[str]
+    concrete_cycles: list[list[str]]
+
+
+class MostDependedOn(BaseModel):
+    module: str
+    ca: int
+
+
+class MostUnstable(BaseModel):
+    module: str
+    instability: float
+    ce: int
+
+
+class SmellModel(BaseModel):
+    type: str
+    severity: float
+    target: str
+    path: str
+    title: str
+    detail: str
+    metrics: dict = Field(default_factory=dict)
+
+
 class AnalysisRun(BaseModel):
     id: Optional[str] = Field(default=None, alias="_id")
     repo_id: str
@@ -52,6 +91,15 @@ class AnalysisRun(BaseModel):
     avg_mi: float = 0
     high_complexity_functions: list[HighComplexityFunction] = Field(default_factory=list)
     unparseable_files: list[str] = Field(default_factory=list)
+    dependency_nodes: list[DependencyNode] = Field(default_factory=list)
+    dependency_edges: list[DependencyEdge] = Field(default_factory=list)
+    cycles: list[DependencyCycle] = Field(default_factory=list)
+    scc_count: int = 0
+    most_depended_on: list[MostDependedOn] = Field(default_factory=list)
+    most_unstable: list[MostUnstable] = Field(default_factory=list)
+    smells: list[SmellModel] = Field(default_factory=list)
+    smell_counts: dict[str, int] = Field(default_factory=dict)
+    health_score: float = 100
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None

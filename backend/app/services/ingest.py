@@ -9,6 +9,8 @@ from bson import ObjectId
 from app.config import settings
 from app.db import db
 from app.services import metrics
+from app.services.depgraph import build_dependency_graph
+from app.services.smells import compute_health_score, compute_smell_counts, detect_smells
 
 
 class IngestError(Exception):
@@ -50,6 +52,8 @@ async def ingest_repo(run_id: str) -> None:
         total_file_count = _enforce_size_limit(tmp)
         files = _collect_py_files(tmp)
         aggregates = _compute_aggregates(files)
+        dependency_aggregates = _compute_dependency_graph(tmp, files)
+        smell_aggregates = _compute_smells(files, dependency_aggregates)
 
         await runs.update_one(
             {"_id": ObjectId(run_id)},
@@ -61,6 +65,8 @@ async def ingest_repo(run_id: str) -> None:
                     "files": files,
                     "finished_at": datetime.now(timezone.utc),
                     **aggregates,
+                    **dependency_aggregates,
+                    **smell_aggregates,
                 }
             },
         )
@@ -155,6 +161,54 @@ def _collect_py_files(root: str) -> list[dict]:
             files.append(entry)
 
     return files
+
+
+def _compute_dependency_graph(root: str, files: list[dict]) -> dict:
+    files_with_sources = []
+    for f in files:
+        if not f.get("parse_ok"):
+            continue
+        abs_path = os.path.join(root, f["path"].replace("/", os.sep))
+        try:
+            with open(abs_path, "r", encoding="utf-8", errors="replace") as fh:
+                source = fh.read()
+        except OSError:
+            continue
+        files_with_sources.append({"path": abs_path, "source": source})
+
+    graph = build_dependency_graph(files_with_sources, root)
+
+    nodes = graph["nodes"]
+    most_depended_on = sorted(nodes, key=lambda n: n["ca"], reverse=True)[:10]
+    most_depended_on = [{"module": n["module"], "ca": n["ca"]} for n in most_depended_on]
+
+    most_unstable = [n for n in nodes if n["instability"] > 0.7 and n["ce"] > 0]
+    most_unstable.sort(key=lambda n: n["instability"], reverse=True)
+    most_unstable = [{"module": n["module"], "instability": n["instability"], "ce": n["ce"]} for n in most_unstable]
+
+    return {
+        "dependency_nodes": nodes,
+        "dependency_edges": graph["edges"],
+        "cycles": graph["cycles"],
+        "scc_count": graph["scc_count"],
+        "most_depended_on": most_depended_on,
+        "most_unstable": most_unstable,
+    }
+
+
+def _compute_smells(files: list[dict], dependency_aggregates: dict) -> dict:
+    smell_input = {
+        "files": files,
+        "dependency_nodes": dependency_aggregates["dependency_nodes"],
+        "cycles": dependency_aggregates["cycles"],
+    }
+    smells = detect_smells(smell_input)
+
+    return {
+        "smells": smells,
+        "smell_counts": compute_smell_counts(smells),
+        "health_score": compute_health_score(smells),
+    }
 
 
 def _compute_aggregates(files: list[dict]) -> dict:
